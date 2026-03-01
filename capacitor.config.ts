@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'out',
   // Load the live Vercel deployment inside the WebView
   server: {
-    url: 'https://where-is-my-l90znn1in-tharun-pasumarthis-projects.vercel.app',
+    url: 'https://where-is-my-hv169is9n-tharun-pasumarthis-projects.vercel.app',
     cleartext: false,
   },
   plugins: {
