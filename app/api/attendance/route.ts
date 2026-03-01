@@ -119,7 +119,8 @@ export async function GET(req: NextRequest) {
       bus_number: busMap[trip?.bus_id]?.number,
       route_name: routeMap[trip?.route_id]?.name,
       stop_name: stopMap[r.stop_id]?.name,
-  }));
+    };
+  });
   return NextResponse.json({ attendance: formatted });
 }
 
