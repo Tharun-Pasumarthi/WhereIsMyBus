@@ -91,30 +91,34 @@ export async function POST(req: NextRequest) {
 
   // Fire-and-forget: notify linked parents via email
   const boardingTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-  db.from('parent_students')
-    .select('profiles!parent_students_parent_id_fkey(email, name)')
-    .eq('student_id', user.id)
-    .then(async ({ data: links }) => {
-      if (!links?.length) return;
-      // Get bus/route info
-      const { data: tripInfo } = await db
-        .from('trips')
-        .select('buses!trips_bus_id_fkey(number), routes!trips_route_id_fkey(name)')
-        .eq('id', tripId)
-        .maybeSingle();
-      const busNum = (tripInfo as any)?.buses?.number ?? 'Unknown';
-      const routeName = (tripInfo as any)?.routes?.name ?? 'Unknown';
+  (async () => {
+    const { data: links } = await db
+      .from('parent_students')
+      .select('parent_id')
+      .eq('student_id', user.id);
+    if (!links?.length) return;
 
-      for (const link of links) {
-        const parent = (link as any).profiles;
-        if (!parent?.email) continue;
-        sendMail({
-          to: parent.email,
-          subject: `✅ ${user.name} has boarded the bus`,
-          html: attendanceConfirmEmail(user.name, busNum, routeName, boardingTime),
-        }).catch(err => console.error('[attendance mail]', err));
-      }
-    });
+    const parentIds = links.map((l: any) => l.parent_id).filter(Boolean);
+    const { data: tripInfo } = await db.from('trips').select('bus_id, route_id').eq('id', tripId).maybeSingle();
+
+    const [{ data: parentProfiles }, { data: busInfo }, { data: routeInfo }] = await Promise.all([
+      parentIds.length ? db.from('profiles').select('id, email, name').in('id', parentIds) : Promise.resolve({ data: [] }),
+      tripInfo?.bus_id ? db.from('buses').select('number').eq('id', tripInfo.bus_id).maybeSingle() : Promise.resolve({ data: null }),
+      tripInfo?.route_id ? db.from('routes').select('name').eq('id', tripInfo.route_id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+
+    const busNum = (busInfo as any)?.number ?? 'Unknown';
+    const routeName = (routeInfo as any)?.name ?? 'Unknown';
+
+    for (const parent of parentProfiles || []) {
+      if (!parent.email) continue;
+      sendMail({
+        to: parent.email,
+        subject: `✅ ${user.name} has boarded the bus`,
+        html: attendanceConfirmEmail(user.name, busNum, routeName, boardingTime),
+      }).catch(err => console.error('[attendance mail]', err));
+    }
+  })();
 
   return NextResponse.json({ success: true, message: 'Checked in successfully!' });
 }

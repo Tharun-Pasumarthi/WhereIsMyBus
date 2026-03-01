@@ -14,7 +14,7 @@ import {
 interface User { id: number; name: string; email: string; role: string; route_id: number | null; }
 interface BusData {
   id: number; number: string; driver_name: string; route_name: string; route_color: string;
-  active_trip_id: number | null; trip_status: string; tracking_status: string;
+  route_id: number | null; active_trip_id: number | null; trip_status: string; tracking_status: string;
   current_lat: number | null; current_lng: number | null; current_speed: number;
   battery_level: number; last_seen: string; trip_start_time: string;
 }
@@ -56,6 +56,7 @@ export default function StudentDashboard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     fetch('/api/auth/me').then(r => r.json()).then(d => {
@@ -108,8 +109,11 @@ export default function StudentDashboard() {
   };
 
   const closeScanner = () => {
+    isProcessingRef.current = false;
     setScannerOpen(false);
     setScanning(false);
+    setScanResult(null);
+    setScanMsg('');
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
@@ -142,13 +146,13 @@ export default function StudentDashboard() {
       } else {
         setScanResult('error');
         setScanMsg(data.error || 'Check-in failed. Try again.');
-        // Restart scanning after showing error
-        setTimeout(() => setScanResult(null), 2500);
+        // Allow retry after error
+        setTimeout(() => { setScanResult(null); isProcessingRef.current = false; }, 2500);
       }
     } catch {
       setScanResult('error');
       setScanMsg('Network error. Please try again.');
-      setTimeout(() => setScanResult(null), 2500);
+      setTimeout(() => { setScanResult(null); isProcessingRef.current = false; }, 2500);
     }
     setCheckingIn(false);
   };
@@ -177,9 +181,8 @@ export default function StudentDashboard() {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const jsQR = (await import('jsqr')).default;
           const code = jsQR(imageData.data, imageData.width, imageData.height);
-          if (code?.data) {
-            if (scanIntervalRef.current) { clearInterval(scanIntervalRef.current); scanIntervalRef.current = null; }
-            if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+          if (code?.data && !isProcessingRef.current) {
+            isProcessingRef.current = true;
             await handleQrScanned(code.data);
           }
         }, 350);
@@ -212,7 +215,7 @@ export default function StudentDashboard() {
     finally { setCheckingIn(false); setTimeout(() => setCheckInMsg(''), 3000); }
   };
 
-  const myBus = buses.find(b => b.id && user?.route_id ? true : false);
+  const myBus = buses.find(b => b.route_id === user?.route_id && b.active_trip_id);
   const activeBuses = buses.filter(b => b.active_trip_id);
 
   if (loading) return (

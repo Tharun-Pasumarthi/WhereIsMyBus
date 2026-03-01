@@ -8,28 +8,34 @@ export async function GET(req: NextRequest) {
 
   const db = createServiceClient();
 
-  // Fetch buses with driver and route info
-  const { data: buses, error } = await db
-    .from('buses')
-    .select('*, driver:profiles!buses_driver_id_fkey(name, phone), route:routes!buses_route_id_fkey(name, color)')
-    .order('number');
+  // Use separate queries to avoid FK name mismatches
+  const [
+    { data: buses, error },
+    { data: profiles },
+    { data: routes },
+    { data: activeTrips },
+  ] = await Promise.all([
+    db.from('buses').select('*').order('number'),
+    db.from('profiles').select('id, name, phone'),
+    db.from('routes').select('id, name, color'),
+    db.from('trips').select('*').eq('status', 'active'),
+  ]);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Fetch active trips
-  const { data: activeTrips } = await db
-    .from('trips')
-    .select('*')
-    .eq('status', 'active');
+  const profileMap = Object.fromEntries((profiles || []).map((p: any) => [p.id, p]));
+  const routeMap = Object.fromEntries((routes || []).map((r: any) => [r.id, r]));
 
   const busesWithTrips = (buses || []).map((b: any) => {
     const trip = (activeTrips || []).find((t: any) => t.bus_id === b.id);
+    const driver = profileMap[b.driver_id] ?? null;
+    const route = routeMap[b.route_id] ?? null;
     return {
       ...b,
-      driver_name: b.driver?.name ?? null,
-      driver_phone: b.driver?.phone ?? null,
-      route_name: b.route?.name ?? null,
-      route_color: b.route?.color ?? null,
+      driver_name: driver?.name ?? null,
+      driver_phone: driver?.phone ?? null,
+      route_name: route?.name ?? null,
+      route_color: route?.color ?? null,
       active_trip_id: trip?.id ?? null,
       trip_status: trip?.status ?? null,
       tracking_status: trip?.tracking_status ?? null,

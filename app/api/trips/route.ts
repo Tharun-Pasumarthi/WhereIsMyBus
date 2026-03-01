@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   let query = db
     .from('trips')
-    .select('*, buses!trips_bus_id_fkey(number, model), profiles!trips_driver_id_fkey(name), routes!trips_route_id_fkey(name, color)')
+    .select('*')
     .order('start_time', { ascending: false })
     .limit(limit);
 
@@ -28,13 +28,28 @@ export async function GET(req: NextRequest) {
   const { data: trips, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Enrich with buses, drivers, routes using separate lookups
+  const busIds = [...new Set((trips || []).map((t: any) => t.bus_id).filter(Boolean))];
+  const driverIds = [...new Set((trips || []).map((t: any) => t.driver_id).filter(Boolean))];
+  const routeIds = [...new Set((trips || []).map((t: any) => t.route_id).filter(Boolean))];
+
+  const [{ data: buses }, { data: drivers }, { data: routes }] = await Promise.all([
+    busIds.length ? db.from('buses').select('id, number, model').in('id', busIds) : Promise.resolve({ data: [] }),
+    driverIds.length ? db.from('profiles').select('id, name').in('id', driverIds) : Promise.resolve({ data: [] }),
+    routeIds.length ? db.from('routes').select('id, name, color').in('id', routeIds) : Promise.resolve({ data: [] }),
+  ]);
+
+  const busMap = Object.fromEntries((buses || []).map((b: any) => [b.id, b]));
+  const driverMap = Object.fromEntries((drivers || []).map((d: any) => [d.id, d]));
+  const routeMap = Object.fromEntries((routes || []).map((r: any) => [r.id, r]));
+
   const formatted = (trips || []).map((t: any) => ({
     ...t,
-    bus_number: t.buses?.number,
-    bus_model: t.buses?.model,
-    driver_name: t.profiles?.name,
-    route_name: t.routes?.name,
-    route_color: t.routes?.color,
+    bus_number: busMap[t.bus_id]?.number ?? null,
+    bus_model: busMap[t.bus_id]?.model ?? null,
+    driver_name: driverMap[t.driver_id]?.name ?? null,
+    route_name: routeMap[t.route_id]?.name ?? null,
+    route_color: routeMap[t.route_id]?.color ?? null,
   }));
 
   return NextResponse.json({ trips: formatted });

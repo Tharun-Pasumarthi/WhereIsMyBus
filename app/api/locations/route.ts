@@ -29,13 +29,16 @@ export async function POST(req: NextRequest) {
 
   const { data: trip } = await db
     .from('trips')
-    .select('*, buses!trips_bus_id_fkey(number)')
+    .select('*')
     .eq('id', trip_id)
     .eq('driver_id', user.id)
     .eq('status', 'active')
     .maybeSingle();
 
   if (!trip) return NextResponse.json({ error: 'Active trip not found' }, { status: 404 });
+
+  const { data: busData } = await db.from('buses').select('number').eq('id', trip.bus_id).maybeSingle();
+  const busNumber = busData?.number ?? 'Unknown';
 
   const batt = battery_level ?? 100;
 
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
         await db.from('alerts').insert({
           type: 'low_battery',
           title: 'Battery Low (20%) — Early Warning',
-          message: `Bus ${trip.buses?.number} driver device is at ${batt}%. Consider plugging in soon.`,
+          message: `Bus ${busNumber} driver device is at ${batt}%. Consider plugging in soon.`,
           bus_id: trip.bus_id,
           trip_id,
           severity: 'info',
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest) {
         await db.from('alerts').insert({
           type: 'low_battery',
           title: 'Critical Battery (15%) — Charge Immediately',
-          message: `Bus ${trip.buses?.number} driver device is critically low at ${batt}%. GPS tracking may be lost soon.`,
+          message: `Bus ${busNumber} driver device is critically low at ${batt}%. GPS tracking may be lost soon.`,
           bus_id: trip.bus_id,
           trip_id,
           severity: 'warning',
@@ -124,7 +127,7 @@ export async function POST(req: NextRequest) {
           await db.from('alerts').insert({
             type: 'geofence',
             title: `Bus Arrived at ${stop.name}`,
-            message: `Bus ${trip.buses?.number} has entered the stop zone for "${stop.name}" (${Math.round(dist)}m away).`,
+            message: `Bus ${busNumber} has entered the stop zone for "${stop.name}" (${Math.round(dist)}m away).`,
             bus_id: trip.bus_id,
             trip_id,
             severity: 'info',
