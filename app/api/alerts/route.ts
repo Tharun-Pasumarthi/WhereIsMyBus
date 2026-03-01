@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSession } from '@/lib/auth';
+import { sendPush } from '@/lib/push';
 
 export async function GET() {
   const user = await getSession();
@@ -35,6 +36,20 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+  // Push notification to admins for critical/warning alerts
+  if (severity === 'critical' || severity === 'warning') {
+    sendPush({
+      roles: ['admin', 'transport_head'],
+      payload: {
+        title: `${severity === 'critical' ? '🚨' : '⚠️'} ${title}`,
+        body: message ?? '',
+        tag: `alert-${data.id}`,
+        url: '/admin',
+      },
+    });
+  }
+
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
 

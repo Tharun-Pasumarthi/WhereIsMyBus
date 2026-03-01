@@ -1,8 +1,9 @@
 'use client';
 
-import { Bus, LogOut, Bell, User, Settings } from 'lucide-react';
+import { Bus, LogOut, Bell, BellOff, BellRing, User, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { usePush } from '@/hooks/use-push';
 
 interface NavProps {
   user: { name: string; role: string; email: string; avatar_url?: string | null };
@@ -28,6 +29,7 @@ const ROLE_COLORS: Record<string, string> = {
 export default function DashboardNav({ user, unreadAlerts = 0 }: NavProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const { state: pushState, subscribe, unsubscribe } = usePush();
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -50,7 +52,27 @@ export default function DashboardNav({ user, unreadAlerts = 0 }: NavProps) {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
-          {unreadAlerts > 0 && (
+          {/* Push notification toggle */}
+          {pushState !== 'unsupported' && (
+            <button
+              onClick={pushState === 'subscribed' ? unsubscribe : subscribe}
+              disabled={pushState === 'loading' || pushState === 'denied'}
+              className="relative p-1.5 rounded-lg hover:bg-muted transition-colors"
+              title={pushState === 'subscribed' ? 'Disable push notifications' : pushState === 'denied' ? 'Notifications blocked in browser' : 'Enable push notifications'}
+              aria-label="Toggle push notifications"
+            >
+              {pushState === 'loading' && <span className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin block text-muted-foreground" />}
+              {pushState === 'subscribed' && <BellRing className="w-4 h-4 text-primary" />}
+              {pushState === 'unsubscribed' && <Bell className="w-4 h-4 text-muted-foreground" />}
+              {pushState === 'denied' && <BellOff className="w-4 h-4 text-red-400" />}
+              {unreadAlerts > 0 && pushState === 'subscribed' && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center text-white font-bold">
+                  {unreadAlerts > 9 ? '9+' : unreadAlerts}
+                </span>
+              )}
+            </button>
+          )}
+          {unreadAlerts > 0 && pushState === 'unsupported' && (
             <div className="relative">
               <Bell className="w-5 h-5 text-muted-foreground" />
               <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center text-white font-bold">

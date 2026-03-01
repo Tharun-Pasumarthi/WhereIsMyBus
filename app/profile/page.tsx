@@ -227,38 +227,6 @@ export default function ProfilePage() {
     }
   };
 
-  const uploadAvatar = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAvatarUploading(true);
-    setAvatarMsg('');
-    const form = new FormData();
-    form.append('avatar', file);
-    const res = await fetch('/api/profile/avatar', { method: 'POST', body: form });
-    const data = await res.json();
-    setAvatarUploading(false);
-    if (res.ok) {
-      setUser(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
-      flash(setAvatarMsg, setAvatarOk, 'Profile photo updated!', true);
-    } else {
-      flash(setAvatarMsg, setAvatarOk, data.error || 'Upload failed', false);
-    }
-    if (avatarInputRef.current) avatarInputRef.current.value = '';
-  };
-
-  const removeAvatar = async () => {
-    setAvatarUploading(true);
-    const res = await fetch('/api/profile/avatar', { method: 'DELETE' });
-    const data = await res.json();
-    setAvatarUploading(false);
-    if (res.ok) {
-      setUser(prev => prev ? { ...prev, avatar_url: null } : prev);
-      flash(setAvatarMsg, setAvatarOk, 'Photo removed.', true);
-    } else {
-      flash(setAvatarMsg, setAvatarOk, data.error || 'Remove failed', false);
-    }
-  };
-
   if (loading) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
