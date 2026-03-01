@@ -171,7 +171,16 @@ export default function LandingPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm font-medium text-foreground">Password</label>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/forgot-password')}
+                    className="text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     type={showPass ? 'text' : 'password'}

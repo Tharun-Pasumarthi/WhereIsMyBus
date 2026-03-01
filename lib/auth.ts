@@ -8,6 +8,7 @@ export interface User {
   role: 'student' | 'driver' | 'admin' | 'transport_head' | 'parent';
   route_id: number | null;
   phone: string | null;
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -48,6 +49,7 @@ export async function getSession(): Promise<User | null> {
       role: profile?.role ?? meta.role ?? 'student',
       route_id: profile?.route_id ?? meta.route_id ?? null,
       phone: profile?.phone ?? meta.phone ?? null,
+      avatar_url: profile?.avatar_url ?? null,
       created_at: profile?.created_at ?? authUser.created_at,
     };
   } catch {

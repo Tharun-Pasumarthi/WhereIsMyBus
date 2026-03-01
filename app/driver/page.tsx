@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardNav from '@/components/dashboard-nav';
 import BusMap from '@/components/bus-map';
+import { useRealtime } from '@/hooks/use-realtime';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Play, Square, Navigation, Battery, BatteryLow, BatteryFull,
@@ -136,13 +137,26 @@ export default function DriverDashboard() {
   }, [tripActive]);
 
   // Load attendance for active trip
+  const loadAttendance = useCallback(() => {
+    if (!tripId) return;
+    fetch(`/api/attendance?trip_id=${tripId}`).then(r => r.json()).then(d => setAttendance(d.attendance || []));
+  }, [tripId]);
+
   useEffect(() => {
     if (!tripId) return;
-    const load = () => fetch(`/api/attendance?trip_id=${tripId}`).then(r => r.json()).then(d => setAttendance(d.attendance || []));
-    load();
-    const i = setInterval(load, 5000);
+    loadAttendance();
+    // Fallback poll every 30s; Realtime handles instant updates
+    const i = setInterval(loadAttendance, 30_000);
     return () => clearInterval(i);
-  }, [tripId]);
+  }, [tripId, loadAttendance]);
+
+  // Realtime: refresh attendance immediately when a new row is inserted
+  useRealtime({
+    table: 'attendance',
+    event: 'INSERT',
+    enabled: !!tripId,
+    onData: loadAttendance,
+  });
 
   const startTrip = async () => {
     setActionLoading(true);

@@ -1,7 +1,35 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { MapPin, Navigation, Circle } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useLoadScript, GoogleMap, MarkerF, InfoWindowF, PolylineF } from '@react-google-maps/api';
+
+const MAP_LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
+const DEFAULT_CENTER = { lat: 12.9400, lng: 77.6280 };
+
+const DARK_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1a1a2e' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8892b0' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0d1117' }] },
+  { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#232946' }] },
+  { featureType: 'landscape', stylers: [{ color: '#161b22' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#21262d' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#30363d' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#6e7681' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2d333b' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#444c56' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0d1117' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#30363d' }] },
+];
+
+function timeAgo(ts?: string): string {
+  if (!ts) return 'Never';
+  const diff = Math.floor((Date.now() - new Date(ts + 'Z').getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
 
 interface BusPosition {
   id: number;
@@ -13,7 +41,224 @@ interface BusPosition {
   current_speed: number;
   tracking_status: string;
   driver_name: string;
+  battery_level?: number;
+  last_seen?: string;
 }
+
+interface Stop {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  route_id: number;
+}
+
+interface BusMapProps {
+  buses: BusPosition[];
+  stops?: Stop[];
+  focusBusId?: number | null;
+  height?: string;
+}
+
+const ROUTE_COLORS = ['#f59e0b', '#0ea5e9', '#10b981', '#8b5cf6', '#ef4444'];
+
+function makeBusIcon(isConnected: boolean, color: string): google.maps.Symbol {
+  return {
+    path: 'M-9,-14 L9,-14 Q11,-14 11,-12 L11,8 Q11,10 9,10 L7,10 L7,14 L3,14 L3,10 L-3,10 L-3,14 L-7,14 L-7,10 L-9,10 Q-11,10 -11,8 L-11,-12 Q-11,-14 -9,-14 Z M-8,-9 L8,-9 L8,-2 L-8,-2 Z',
+    fillColor: isConnected ? color : '#6e7681',
+    fillOpacity: 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 1.5,
+    scale: 1.1,
+    anchor: new google.maps.Point(0, 0),
+  };
+}
+
+function makeStopIcon(): google.maps.Symbol {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: '#f59e0b',
+    fillOpacity: 0.9,
+    strokeColor: '#ffffff',
+    strokeWeight: 2,
+    scale: 6,
+  };
+}
+
+export default function BusMap({ buses, stops = [], focusBusId, height = 'h-full' }: BusMapProps) {
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: MAP_LIBRARIES,
+  });
+
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const [selectedBusId, setSelectedBusId] = useState<number | null>(null);
+  const [selectedStopId, setSelectedStopId] = useState<number | null>(null);
+
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+  }, []);
+
+  // Pan to focused bus
+  useEffect(() => {
+    if (!mapRef.current || focusBusId == null) return;
+    const bus = buses.find(b => b.id === focusBusId);
+    if (bus?.current_lat && bus?.current_lng) {
+      mapRef.current.panTo({ lat: bus.current_lat, lng: bus.current_lng });
+      mapRef.current.setZoom(16);
+    }
+  }, [focusBusId, buses]);
+
+  // Auto-fit all buses into view
+  useEffect(() => {
+    if (!mapRef.current || !isLoaded || focusBusId != null) return;
+    const valid = buses.filter(b => b.current_lat && b.current_lng);
+    if (valid.length === 0) return;
+    if (valid.length === 1) {
+      mapRef.current.panTo({ lat: valid[0].current_lat!, lng: valid[0].current_lng! });
+      mapRef.current.setZoom(15);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    valid.forEach(b => bounds.extend({ lat: b.current_lat!, lng: b.current_lng! }));
+    stops.forEach(s => bounds.extend({ lat: s.lat, lng: s.lng }));
+    mapRef.current.fitBounds(bounds, 60);
+  }, [buses, stops, isLoaded, focusBusId]);
+
+  // Group stops by route for polylines
+  const routeGroups: Record<number, Stop[]> = {};
+  stops.forEach(s => {
+    if (!routeGroups[s.route_id]) routeGroups[s.route_id] = [];
+    routeGroups[s.route_id].push(s);
+  });
+
+  const selectedBus = buses.find(b => b.id === selectedBusId) ?? null;
+  const selectedStop = stops.find(s => s.id === selectedStopId) ?? null;
+
+  if (loadError) {
+    return (
+      <div className={`${height} flex items-center justify-center rounded-xl bg-card border border-border/50`}>
+        <div className="text-center space-y-1 p-6">
+          <p className="text-sm font-medium text-red-400">Map failed to load</p>
+          <p className="text-xs text-muted-foreground">Verify NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className={`${height} flex items-center justify-center rounded-xl bg-card border border-border/50`}>
+        <div className="flex flex-col items-center gap-3">
+          <span className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+          <p className="text-xs text-muted-foreground">Loading map…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative ${height} rounded-xl overflow-hidden border border-border/50`}>
+      <GoogleMap
+        mapContainerClassName="w-full h-full"
+        center={DEFAULT_CENTER}
+        zoom={13}
+        onLoad={onMapLoad}
+        options={{
+          styles: DARK_STYLE,
+          zoomControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
+          clickableIcons: false,
+          gestureHandling: 'greedy',
+        }}
+        onClick={() => { setSelectedBusId(null); setSelectedStopId(null); }}
+      >
+        {/* Route polylines */}
+        {Object.entries(routeGroups).map(([routeId, routeStops], idx) => (
+          <PolylineF
+            key={`route-${routeId}`}
+            path={routeStops.map(s => ({ lat: s.lat, lng: s.lng }))}
+            options={{
+              strokeColor: ROUTE_COLORS[idx % ROUTE_COLORS.length],
+              strokeOpacity: 0.7,
+              strokeWeight: 4,
+              geodesic: true,
+            }}
+          />
+        ))}
+
+        {/* Stop markers */}
+        {stops.map(stop => (
+          <MarkerF
+            key={`stop-${stop.id}`}
+            position={{ lat: stop.lat, lng: stop.lng }}
+            icon={makeStopIcon()}
+            title={stop.name}
+            onClick={() => { setSelectedStopId(stop.id); setSelectedBusId(null); }}
+          />
+        ))}
+
+        {/* Bus markers */}
+        {buses
+          .filter(b => b.current_lat && b.current_lng)
+          .map(bus => (
+            <MarkerF
+              key={`bus-${bus.id}`}
+              position={{ lat: bus.current_lat!, lng: bus.current_lng! }}
+              icon={makeBusIcon(bus.tracking_status === 'connected', bus.route_color || '#f59e0b')}
+              title={`Bus ${bus.bus_number}`}
+              onClick={() => { setSelectedBusId(bus.id); setSelectedStopId(null); }}
+            />
+          ))}
+
+        {/* Bus info window */}
+        {selectedBus?.current_lat && selectedBus?.current_lng && (
+          <InfoWindowF
+            position={{ lat: selectedBus.current_lat, lng: selectedBus.current_lng }}
+            onCloseClick={() => setSelectedBusId(null)}
+            options={{ pixelOffset: new google.maps.Size(0, -22) }}
+          >
+            <div style={{ background: '#1a1a2e', color: '#e6edf3', padding: '10px 14px', borderRadius: 8, minWidth: 180, fontSize: 13, lineHeight: 1.6 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>🚌 Bus {selectedBus.bus_number}</div>
+              <div style={{ color: '#8892b0', fontSize: 12, marginBottom: 6 }}>{selectedBus.route_name}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+                <span>Speed: <b>{selectedBus.current_speed ?? 0} km/h</b></span>
+                {selectedBus.battery_level != null && <span>Battery: <b>{selectedBus.battery_level}%</b></span>}
+                <span style={{ color: selectedBus.tracking_status === 'connected' ? '#10b981' : '#ef4444' }}>
+                  ● {selectedBus.tracking_status === 'connected' ? 'Live' : 'Disconnected'}
+                </span>
+                {selectedBus.last_seen && (
+                  <span style={{ color: '#6e7681', fontSize: 11 }}>Updated {timeAgo(selectedBus.last_seen)}</span>
+                )}
+              </div>
+            </div>
+          </InfoWindowF>
+        )}
+
+        {/* Stop info window */}
+        {selectedStop && (
+          <InfoWindowF
+            position={{ lat: selectedStop.lat, lng: selectedStop.lng }}
+            onCloseClick={() => setSelectedStopId(null)}
+          >
+            <div style={{ background: '#1a1a2e', color: '#e6edf3', padding: '8px 12px', borderRadius: 8, fontSize: 13 }}>
+              <div style={{ fontWeight: 700 }}>📍 {selectedStop.name}</div>
+            </div>
+          </InfoWindowF>
+        )}
+      </GoogleMap>
+
+      {/* Live badge */}
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 bg-background/80 backdrop-blur-sm border border-border/50 rounded-full px-2.5 py-1 text-xs font-medium text-foreground pointer-events-none">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse inline-block" />
+        {buses.filter(b => b.tracking_status === 'connected').length} live
+      </div>
+    </div>
+  );
+}
+
 
 interface Stop {
   id: number;

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 interface NavProps {
-  user: { name: string; role: string; email: string };
+  user: { name: string; role: string; email: string; avatar_url?: string | null };
   unreadAlerts?: number;
 }
 
@@ -60,8 +60,11 @@ export default function DashboardNav({ user, unreadAlerts = 0 }: NavProps) {
           )}
 
           <div className="flex items-center gap-2 pl-2 border-l border-border/50">
-            <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center">
-              <User className="w-4 h-4 text-muted-foreground" />
+            <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center overflow-hidden shrink-0">
+              {user.avatar_url
+                ? <img src={user.avatar_url} alt={user.name} className="w-full h-full object-cover" />
+                : <User className="w-4 h-4 text-muted-foreground" />
+              }
             </div>
             <div className="hidden sm:block">
               <div className="text-sm font-medium text-foreground leading-none">{user.name}</div>
@@ -74,6 +77,7 @@ export default function DashboardNav({ user, unreadAlerts = 0 }: NavProps) {
               onClick={() => router.push('/profile')}
               className="ml-1 p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
               title="Profile & Settings"
+              aria-label="Profile & Settings"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -83,6 +87,7 @@ export default function DashboardNav({ user, unreadAlerts = 0 }: NavProps) {
               disabled={loggingOut}
               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-red-400 transition-colors"
               title="Sign out"
+              aria-label="Sign out"
             >
               {loggingOut
                 ? <span className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin block" />

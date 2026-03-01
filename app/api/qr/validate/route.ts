@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSession } from '@/lib/auth';
+import { sendMail, attendanceConfirmEmail } from '@/lib/mailer';
 
 const QR_SECRET = process.env.QR_SECRET || 'gps-qr-secret-changeme';
 const BUCKET_MS = 120_000;
@@ -87,6 +88,33 @@ export async function POST(req: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Fire-and-forget: notify linked parents via email
+  const boardingTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  db.from('parent_students')
+    .select('profiles!parent_students_parent_id_fkey(email, name)')
+    .eq('student_id', user.id)
+    .then(async ({ data: links }) => {
+      if (!links?.length) return;
+      // Get bus/route info
+      const { data: tripInfo } = await db
+        .from('trips')
+        .select('buses!trips_bus_id_fkey(number), routes!trips_route_id_fkey(name)')
+        .eq('id', tripId)
+        .maybeSingle();
+      const busNum = (tripInfo as any)?.buses?.number ?? 'Unknown';
+      const routeName = (tripInfo as any)?.routes?.name ?? 'Unknown';
+
+      for (const link of links) {
+        const parent = (link as any).profiles;
+        if (!parent?.email) continue;
+        sendMail({
+          to: parent.email,
+          subject: `✅ ${user.name} has boarded the bus`,
+          html: attendanceConfirmEmail(user.name, busNum, routeName, boardingTime),
+        }).catch(err => console.error('[attendance mail]', err));
+      }
+    });
 
   return NextResponse.json({ success: true, message: 'Checked in successfully!' });
 }

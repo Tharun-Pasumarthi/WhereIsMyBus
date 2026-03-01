@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardNav from '@/components/dashboard-nav';
 import BusMap from '@/components/bus-map';
+import { useMultiRealtime } from '@/hooks/use-realtime';
 import {
   Bus, MapPin, Clock, Wifi, WifiOff, Battery, BatteryLow,
   QrCode, CheckCircle, AlertTriangle, RefreshCw, Navigation,
@@ -82,9 +83,17 @@ export default function StudentDashboard() {
     if (!user) return;
     setLoading(true);
     fetchData().finally(() => setLoading(false));
-    const interval = setInterval(fetchData, 8000);
+    // 30s fallback poll; Realtime handles instant updates
+    const interval = setInterval(fetchData, 30_000);
     return () => clearInterval(interval);
   }, [user, fetchData]);
+
+  // Realtime: refresh on trip/location changes
+  useMultiRealtime(
+    [{ table: 'trips' }, { table: 'locations', event: 'INSERT' }],
+    () => { if (user) fetchData(); },
+    !!user
+  );
 
   const handleRefresh = async () => {
     setRefreshing(true);

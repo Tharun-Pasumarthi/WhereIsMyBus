@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardNav from '@/components/dashboard-nav';
 import BusMap from '@/components/bus-map';
+import { useMultiRealtime } from '@/hooks/use-realtime';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import {
   Bus, Users, MapPin, Bell, AlertTriangle, CheckCircle, XCircle,
@@ -109,9 +110,17 @@ export default function AdminDashboard() {
     if (!user) return;
     setLoading(true);
     fetchAll().finally(() => setLoading(false));
-    const i = setInterval(fetchAll, 10000);
+    // 30s fallback; Realtime drives instant updates
+    const i = setInterval(fetchAll, 30_000);
     return () => clearInterval(i);
   }, [user, fetchAll]);
+
+  // Realtime: refresh on any key table change
+  useMultiRealtime(
+    [{ table: 'trips' }, { table: 'locations', event: 'INSERT' }, { table: 'alerts', event: 'INSERT' }, { table: 'attendance', event: 'INSERT' }],
+    () => { if (user) fetchAll(); },
+    !!user
+  );
 
   const markAlertRead = async (id: number) => {
     await fetch('/api/alerts', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
