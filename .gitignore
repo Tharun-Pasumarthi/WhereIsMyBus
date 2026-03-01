@@ -8,3 +8,14 @@ node_modules/
 .next/
 .env*.local
 .DS_Store
+
+# Android build artifacts (keep source, ignore binaries)
+android/.gradle/
+android/build/
+android/app/build/
+android/.idea/
+android/local.properties
+android/captures/
+android/out/
+*.apk
+*.aab
